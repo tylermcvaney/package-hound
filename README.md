@@ -1,11 +1,11 @@
-<img src="https://github.com/user-attachments/assets/ea515ff8-7152-4f90-baa3-128589e4d7b1" alt="Package Hound Logo" width="256" height="256">
-
 # 🐕 Package Hound
 A command-line tool that helps you verify if packages exist in your Artifactory instance.
 
 ## 📋 Overview
 
 The Artifactory Package Checker (`hound.py`) reads a CSV file containing package information and queries your Artifactory instance to check if those packages exist, producing a CSV report with the results.
+
+<img src="https://github.com/user-attachments/assets/ea515ff8-7152-4f90-baa3-128589e4d7b1" alt="Package Hound Logo" width="256" height="256">
 
 ## 🔧 Prerequisites
 
