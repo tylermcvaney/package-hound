@@ -41,6 +41,8 @@ The Artifactory Package Checker (`hound.py`) reads a CSV file containing package
 | `--api-key` | Artifactory API key | Yes |
 | `--workers` | Number of concurrent workers (default: 10) | No |
 | `--verbose` | Enable verbose logging | No |
+| `--cert-path` | Path to custom SSL certificate (PEM format) | No |
+| `--no-ssl-verify` | Disable SSL verification (not recommended) | No |
 
 ## 📄 Input CSV Format
 
@@ -58,6 +60,27 @@ nuget-repo/Newtonsoft.Json/13.0.1,nuget
 terraform-modules/hashicorp/aws/4.0.0,terraform
 docker-registry/library/ubuntu/latest,docker
 ```
+
+## 🔒 SSL Certificate Options
+
+Package Hound now supports the following options for handling SSL certificates when connecting to Artifactory:
+
+### Option 1: Provide a Custom Certificate (Recommended)
+
+If your Artifactory instance uses a self-signed certificate or an internal CA, you can provide the certificate file:
+
+```bash
+./hound.py --cert-path /path/to/certificate.pem --base-url https://artifactory.example.com ...
+```
+The certificate file should be in PEM format. This is the most secure approach.
+
+### Option 2: Disable SSL Verification (Not recommended for production)
+
+For testing purposes only, you can disable SSL certificate verification:
+```bash
+./hound.py --no-ssl-verify --base-url https://artifactory.example.com ...
+```
+⚠️ Warning: This option disables SSL verification entirely and is not recommended for production use.
 
 ## 📊 Output CSV Format
 
@@ -79,7 +102,7 @@ The output CSV contains the following columns:
 | `maven` | Java/JVM packages | maven-local, maven-remote, maven-virtual, libs-release, maven-authorized |
 | `nuget` | .NET packages | nuget-local, nuget-remote, nuget-virtual |
 | `terraform` | Terraform modules | terraform-local, terraform-remote, terraform-virtual |
-| `docker` | Docker images | docker-local, docker-remote, docker-virtual |## 🔍 Supported Package Types
+| `docker` | Docker images | docker-local, docker-remote, docker-virtual |
 
 ## 💡 Examples
 
@@ -99,6 +122,16 @@ The output CSV contains the following columns:
 
 ```bash
 ./hound.py --input packages.csv --output results.csv --base-url https://artifactory.example.com/artifactory --api-key AKC123456789ABCDEF --verbose
+```
+
+#### With Self-Signed Certificate (Recommended for SSL)
+```bash
+./hound.py --input packages.csv --output results.csv --base-url https://artifactory.example.com/artifactory --api-key AKC123456789ABCDEF --cert-path /path/to/certificate.pem
+```
+
+#### Disabling SSL Verification (Not For Production Use)
+```bash
+./hound.py --input packages.csv --output results.csv --base-url https://artifactory.example.com/artifactory --api-key AKC123456789ABCDEF --no-ssl-verify
 ```
 
 ## ⚙️ Customizing Repository Mappings
@@ -123,7 +156,8 @@ The script outputs logs to the console. Use the `--verbose` flag to see more det
 The package includes a comprehensive test suite:
 ```bash
 # Run all tests
-python -m unittest tests/*.py
+python3 -m unittest tests/*.py
 
 # Run a specific test file
-python -m unittest tests/test_artifactory_checker.py
+python3 -m unittest tests/test_artifactory_checker.py
+```

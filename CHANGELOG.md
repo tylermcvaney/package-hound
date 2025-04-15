@@ -15,3 +15,5 @@
 - Comprehensive logging with configurable verbosity
 - Detailed error reporting for packages not found
 - Added test coverage with mock objects
+- Support for self-signed SSL certificates with `--cert-path` option
+- Option to disable SSL verification with `--no-ssl-verify` (for testing only)

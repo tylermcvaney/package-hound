@@ -8,6 +8,8 @@ import re
 from urllib.parse import quote
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import urllib3
+from requests.exceptions import SSLError
 
 # Set up logging
 logging.basicConfig(
@@ -300,20 +302,36 @@ class ArtifactPackage:
         return f"{self.package_name} ({self.version}) in {self.repo}"
 
 class ArtifactoryPackageChecker:
-    def __init__(self, base_url, api_key, repo_mappings=None, max_workers=10):
+    def __init__(self, base_url, api_key, repo_mappings=None, max_workers=10, 
+                 ssl_verify=True, cert_path=None):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
         self.repo_mappings = repo_mappings or DEFAULT_REPO_MAPPINGS
         self.max_workers = max_workers
+        self.ssl_verify = ssl_verify
+        self.cert_path = cert_path
         self.session = self._create_session()
         
     def _create_session(self):
-        """Create a requests session with authentication headers"""
+        """Create a requests session with authentication headers and SSL settings"""
         session = requests.Session()
         session.headers.update({
             'X-JFrog-Art-Api': self.api_key,
             'Content-Type': 'application/json'
         })
+        
+        # Configure SSL verification
+        if self.ssl_verify is False:
+            logger.warning("SSL certificate verification disabled. This is not recommended for production use.")
+            session.verify = False
+            # Suppress only the single warning from urllib3 needed
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        elif self.cert_path:
+            if not os.path.isfile(self.cert_path):
+                raise FileNotFoundError(f"Certificate file not found: {self.cert_path}")
+            logger.info(f"Using custom certificate from: {self.cert_path}")
+            session.verify = self.cert_path
+            
         return session
     
     def check_artifactory_connection(self):
@@ -327,6 +345,10 @@ class ArtifactoryPackageChecker:
             else:
                 logger.error(f"Failed to connect to Artifactory. Status: {response.status_code}, Response: {response.text}")
                 return False
+        except SSLError as e:
+            logger.error(f"SSL Error connecting to Artifactory: {str(e)}")
+            logger.error("If using a self-signed certificate, try using --cert-path or --no-ssl-verify")
+            return False
         except Exception as e:
             logger.error(f"Error connecting to Artifactory: {str(e)}")
             return False
@@ -674,6 +696,9 @@ def main():
     parser.add_argument('--api-key', required=True, help='Artifactory API key')
     parser.add_argument('--workers', type=int, default=10, help='Number of concurrent workers')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--no-ssl-verify', action='store_true', 
+                        help='Disable SSL certificate verification (not recommended)')
+    parser.add_argument('--cert-path', help='Path to custom CA certificate or self-signed certificate')
     
     args = parser.parse_args()
     
@@ -685,7 +710,9 @@ def main():
     checker = ArtifactoryPackageChecker(
         base_url=args.base_url,
         api_key=args.api_key,
-        max_workers=args.workers
+        max_workers=args.workers,
+        ssl_verify=not args.no_ssl_verify,
+        cert_path=args.cert_path
     )
     
     success = checker.process_package_list(args.input, args.output)
