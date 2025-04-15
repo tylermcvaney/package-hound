@@ -1,5 +1,5 @@
 # Changelog
-## v1.0.0 - 2025-04-10
+## v1.0.0
 ### Added
 - Initial release of the Artifactory Package Checker
 - Support for checking package existence across multiple repository types:
@@ -14,3 +14,4 @@
 - CSV input and output for batch processing
 - Comprehensive logging with configurable verbosity
 - Detailed error reporting for packages not found
+- Added test coverage with mock objects

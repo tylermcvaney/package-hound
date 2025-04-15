@@ -117,3 +117,13 @@ If you need to customize this behavior further, you can modify the `DEFAULT_REPO
 ## 📝 Logging
 
 The script outputs logs to the console. Use the `--verbose` flag to see more detailed logs, which can be helpful for troubleshooting.
+
+### 🧪 Running Tests
+
+The package includes a comprehensive test suite:
+```bash
+# Run all tests
+python -m unittest tests/*.py
+
+# Run a specific test file
+python -m unittest tests/test_artifactory_checker.py

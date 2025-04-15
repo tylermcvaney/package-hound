@@ -32,10 +32,17 @@ class ArtifactPackage:
     def __init__(self, path, package_type):
         self.path = path.strip()
         self.package_type = package_type.strip().lower()
-        self.repo = self._extract_repo()
+        
+        # Special case for NuGet packages that are just filenames
+        if self.package_type == 'nuget' and '/' not in path and path.endswith('.nupkg'):
+            self.filename = path
+            self.repo = None  # No repo specified
+        else:
+            self.filename = os.path.basename(self.path)
+            self.repo = self._extract_repo()
+        
         self.package_name = self._extract_package_name()
         self.version = self._extract_version()
-        self.filename = os.path.basename(self.path)
     
     def _extract_repo(self):
         """Extract repository name from path"""
@@ -46,13 +53,29 @@ class ArtifactPackage:
     def _extract_package_name(self):
         """Extract package name from path based on type"""
         if self.package_type == 'maven':
-            # Extract group and artifact ID for Maven
             parts = self.path.split('/')
-            if len(parts) >= 4:  # repo/group/artifact/version/...
-                # Group ID is the path between repo and artifact
-                group_path = '/'.join(parts[1:-2])
-                artifact_id = parts[-3]
-                group_id = group_path.replace('/', '.')
+            
+            # Special case for maven-metadata.xml
+            if self.filename == 'maven-metadata.xml':
+                # For metadata files, the artifact ID is the directory containing the file
+                artifact_id = parts[-2]
+                # Group ID is everything between repo and artifact ID
+                group_parts = parts[1:-2]
+                group_id = '.'.join(group_parts)
+                return f"{group_id}:{artifact_id}"
+                
+            if len(parts) >= 4:  # Need at least repo/group/artifact/version
+                # Find the version directory - it's the one before the filename
+                # (or second from end if no filename in path)
+                version_index = -2 if self.filename and self.filename in parts else -1
+                
+                # Artifact ID is the directory right before the version
+                artifact_id = parts[version_index - 1]
+                
+                # Group ID includes all directories between repo and artifact ID
+                group_parts = parts[1:version_index - 1]
+                group_id = '.'.join(group_parts)
+                
                 return f"{group_id}:{artifact_id}"
             return None
         
@@ -84,10 +107,22 @@ class ArtifactPackage:
             return None
         
         elif self.package_type == 'nuget':
-            # NuGet packages: repo/package-id/version/package-id.version.nupkg
-            parts = self.path.split('/')
-            if len(parts) >= 3:
-                return parts[1]
+            if '/' in self.path:
+                # Standard path format: repo/package/version
+                parts = self.path.split('/')
+                if len(parts) >= 2:
+                    return parts[1]
+            elif self.filename.endswith('.nupkg'):
+                # Direct filename format: package.version.nupkg
+                # We need to identify where the version starts
+                base_name = self.filename[:-6]  # Remove '.nupkg'
+                
+                # Find the last occurence of a version pattern like X.Y.Z
+                match = re.search(r'(.+)\.(\d+\.\d+\.\d+(?:\.\d+)?)$', base_name)
+                if match:
+                    package_name = match.group(1)
+                    # version = match.group(2)  # We could capture this but don't need it here
+                    return package_name
             return None
         
         elif self.package_type == 'terraform':
@@ -98,11 +133,38 @@ class ArtifactPackage:
             return None
         
         elif self.package_type == 'docker':
-            # Docker images: repo/namespace/image/tag
+            # Docker images have multiple path formats
             parts = self.path.split('/')
-            if len(parts) >= 3:
-                return f"{parts[1]}/{parts[2]}" if len(parts) > 3 else parts[1]
-            return None
+            
+            # Ensure we have enough parts for a meaningful path
+            if len(parts) < 3:
+                return None
+            
+            # Check for different Docker path patterns
+            
+            # Case 1: docker/namespace/image/_uploads/... (webhook uploads)
+            if '_uploads' in parts:
+                # Find the index of '_uploads'
+                uploads_idx = parts.index('_uploads')
+                if uploads_idx >= 3:  # Make sure we have repo/namespace/image before _uploads
+                    # Package name is namespace/image
+                    return f"{parts[1]}/{parts[2]}"
+            
+            # Case 2: docker/namespace/image/tag/... (versioned paths with extra components)
+            elif len(parts) >= 5 and re.match(r'.*-.*', parts[3]):  # Check for hyphenated version format
+                # Package name is namespace/image
+                return f"{parts[1]}/{parts[2]}"
+                
+            # Case 3: docker/namespace/image/tag/... (standard versioned paths)
+            elif len(parts) >= 4 and not parts[3].startswith('_'):
+                # Check if the 4th part looks like a version or tag
+                potential_version = parts[3]
+                # Package name is namespace/image
+                return f"{parts[1]}/{parts[2]}"
+            
+            # Case 4: docker/namespace/image (simple path)
+            else:
+                return f"{parts[1]}/{parts[2]}" if len(parts) >= 3 else parts[1]
         
         # Default fallback: use the second path component as package name
         parts = self.path.split('/')
@@ -112,6 +174,16 @@ class ArtifactPackage:
     
     def _extract_version(self):
         """Extract version from path based on type"""
+        # Special cases for metadata files which don't represent a specific version
+        if self.package_type == 'maven' and self.filename == 'maven-metadata.xml':
+            return None
+        elif self.package_type == 'python' and (self.filename.endswith('.html') or self.filename == 'index.html'):
+            return None
+        elif self.package_type == 'npm' and self.filename == 'package.json':
+            return None
+        elif self.package_type == 'nuget' and self.filename == 'index.json':
+            return None
+        
         if self.package_type == 'maven':
             # Maven version is typically after the artifact ID
             parts = self.path.split('/')
@@ -134,8 +206,27 @@ class ArtifactPackage:
         elif self.package_type == 'npm':
             # NPM version is typically after the package name
             parts = self.path.split('/')
-            if len(parts) >= 4:  # For scoped: repo/@scope/package/version/...
-                return parts[3] if parts[1].startswith('@') else parts[2]
+            
+            # First check if this is a .tgz file path
+            if self.filename and self.filename.endswith('.tgz'):
+                # Extract version from filename (package-version.tgz)
+                package_name = self.package_name
+                if package_name and '/' in package_name:
+                    # For scoped packages, get the part after the /
+                    package_name = package_name.split('/')[-1]
+                
+                if package_name:
+                    # Look for pattern: packagename-version.tgz
+                    match = re.search(f"{package_name}-(.+)\\.tgz", self.filename)
+                    if match:
+                        return match.group(1)
+            
+            # Fall back to directory structure
+            if parts[1].startswith('@') and len(parts) >= 4:  # Scoped package: repo/@scope/package/version
+                return parts[3]
+            elif len(parts) >= 3:  # Regular package: repo/package/version
+                return parts[2]
+            
             return None
         
         elif self.package_type == 'python':
@@ -147,10 +238,30 @@ class ArtifactPackage:
             return None
         
         elif self.package_type == 'nuget':
-            # NuGet version is typically the third path component
-            parts = self.path.split('/')
-            if len(parts) >= 4:  # repo/package/version/file
-                return parts[2]
+            if '/' in self.path:
+                # Standard path format: repo/package/version
+                parts = self.path.split('/')
+                if len(parts) >= 3:
+                    return parts[2]
+            elif self.filename.endswith('.nupkg'):
+                # Extract version from the filename by removing the extension
+                base_name = self.filename[:-6]  # Remove '.nupkg'
+                
+                # Get the package name (already extracted)
+                package_name = self.package_name
+                
+                if package_name:
+                    # Find the package name exactly at the beginning of the string or with a separator
+                    # This ensures we don't match part of another word
+                    if base_name.startswith(package_name + '.'):
+                        # Version is everything after the package name plus a dot
+                        version_start = len(package_name) + 1  # +1 for the dot
+                        return base_name[version_start:]
+                    
+                # More robust approach using regex to find version pattern
+                match = re.search(r'\.(\d+\.\d+\.\d+(?:\.\d+)?)(?:$|\.)', base_name)
+                if match:
+                    return match.group(1)
             return None
         
         elif self.package_type == 'terraform':
@@ -161,11 +272,23 @@ class ArtifactPackage:
             return None
         
         elif self.package_type == 'docker':
-            # Docker tag is typically the fourth path component or 'latest'
+            # Docker version/tag extraction
             parts = self.path.split('/')
-            if len(parts) >= 4:  # repo/namespace/image/tag
+            
+            # Check for different Docker path patterns
+            
+            # Case 1: docker/namespace/image/_uploads/... (no specific version)
+            if '_uploads' in parts:
+                return 'latest'  # Default to latest for upload paths
+            
+            # Case 2: docker/namespace/image/tag/... (versioned paths)
+            elif len(parts) >= 4 and not parts[3].startswith('_'):
+                # 4th part is the version/tag
                 return parts[3]
-            return 'latest'  # Default tag
+            
+            # Case 3: docker/namespace/image (simple path - assume latest)
+            else:
+                return 'latest'
         
         # Default fallback: try to find version-like string in path
         version_match = re.search(r'(\d+\.\d+(\.\d+)?([.-]\w+)?)', self.path)
@@ -266,7 +389,16 @@ class ArtifactoryPackageChecker:
     
     def check_package_exists(self, artifact_package):
         """Check if a specific package version exists in Artifactory"""
-        if not artifact_package.package_name or not artifact_package.version:
+        # Special handling for metadata files
+        is_metadata_file = (
+            (artifact_package.package_type == 'maven' and artifact_package.filename == 'maven-metadata.xml') or
+            (artifact_package.package_type == 'python' and artifact_package.filename in ['index.html']) or
+            (artifact_package.package_type == 'npm' and artifact_package.filename == 'package.json') or
+            (artifact_package.package_type == 'nuget' and artifact_package.filename == 'index.json')
+        )
+
+        if is_metadata_file:
+            # Use special handling for metadata files...
             return {
                 'path': artifact_package.path,
                 'package_name': artifact_package.package_name,
@@ -306,10 +438,16 @@ class ArtifactoryPackageChecker:
                     if ':' in artifact_package.package_name:
                         group_id, artifact_id = artifact_package.package_name.split(':', 1)
                         group_path = group_id.replace('.', '/')
-                        check_url = f"{self.base_url}/{repo}/{group_path}/{artifact_id}/{artifact_package.version}/{artifact_id}-{artifact_package.version}.jar"
                         
-                        # Also try POM if JAR doesn't exist
-                        pom_url = f"{self.base_url}/{repo}/{group_path}/{artifact_id}/{artifact_package.version}/{artifact_id}-{artifact_package.version}.pom"
+                        if is_metadata_file:
+                            # For metadata files, we don't need version or file extension
+                            check_url = f"{self.base_url}/{repo}/{group_path}/{artifact_id}/maven-metadata.xml"
+                        else:
+                            # For normal artifacts, include version and extension
+                            check_url = f"{self.base_url}/{repo}/{group_path}/{artifact_id}/{artifact_package.version}/{artifact_id}-{artifact_package.version}.jar"
+                            
+                            # Also try POM if JAR doesn't exist
+                            pom_url = f"{self.base_url}/{repo}/{group_path}/{artifact_id}/{artifact_package.version}/{artifact_id}-{artifact_package.version}.pom"
                 
                 elif artifact_package.package_type == 'npm':
                     # NPM packages
@@ -334,13 +472,10 @@ class ArtifactoryPackageChecker:
                         check_url = f"{self.base_url}/{repo}/modules/{namespace}/{name}/{artifact_package.version}"
                     else:
                         check_url = f"{self.base_url}/{repo}/modules/{artifact_package.package_name}/{artifact_package.version}"
-                
+
                 elif artifact_package.package_type == 'docker':
                     # Docker images
-                    if '/' in artifact_package.package_name:
-                        check_url = f"{self.base_url}/{repo}/{artifact_package.package_name}/manifests/{artifact_package.version}"
-                    else:
-                        check_url = f"{self.base_url}/{repo}/{artifact_package.package_name}/manifests/{artifact_package.version}"
+                    check_url = f"{self.base_url}/{repo}/{artifact_package.package_name}/manifests/{artifact_package.version}"
             
             try:
                 logger.debug(f"Checking URL: {check_url}")
@@ -413,10 +548,7 @@ class ArtifactoryPackageChecker:
                     api_endpoint = f"{self.base_url}/api/terraform/{repo}/modules/{package_name}"
             
             elif package_type == 'docker':
-                if '/' in package_name:
-                    api_endpoint = f"{self.base_url}/api/docker/{repo}/{package_name}/tags"
-                else:
-                    api_endpoint = f"{self.base_url}/api/docker/{repo}/{package_name}/tags"
+                api_endpoint = f"{self.base_url}/api/docker/{repo}/{package_name}/tags"
             
             if api_endpoint:
                 try:
