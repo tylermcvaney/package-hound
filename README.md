@@ -99,7 +99,7 @@ The output CSV contains the following columns:
 |------|-------------|---------------------|
 | `python` | Python packages from PyPI | pypi-local, pypi-remote, pypi-virtual |
 | `npm` | JavaScript/Node.js packages | npm-local, npm-remote, npm-virtual |
-| `maven` | Java/JVM packages | maven-local, maven-remote, maven-virtual, libs-release, maven-authorized |
+| `maven` | Java/JVM packages | maven-local, maven-remote, maven-virtual, libs-release |
 | `nuget` | .NET packages | nuget-local, nuget-remote, nuget-virtual |
 | `terraform` | Terraform modules | terraform-local, terraform-remote, terraform-virtual |
 | `docker` | Docker images | docker-local, docker-remote, docker-virtual |
@@ -136,7 +136,7 @@ The output CSV contains the following columns:
 
 ## ⚙️ Customizing Repository Mappings
 
-By default, the script will look for repositories with specific names like `pypi-authorized` for Python packages. If your Artifactory instance uses different repository names, the script will attempt to automatically detect appropriate repositories by their type.
+By default, the script will look for repositories with specific names like `pypi-local` Python packages. If your Artifactory instance uses different repository names, the script will attempt to automatically detect appropriate repositories by their type.
 
 If you need to customize this behavior further, you can modify the `DEFAULT_REPO_MAPPINGS` dictionary at the top of the script.
 

@@ -22,7 +22,7 @@ logger = logging.getLogger('artifactory_checker')
 DEFAULT_REPO_MAPPINGS = {
     'python': ['pypi-local', 'pypi-remote', 'pypi-virtual'],
     'npm': ['npm-local', 'npm-remote', 'npm-virtual'],
-    'maven': ['maven-local', 'maven-remote', 'maven-virtual', 'libs-release', 'maven-authorized'],
+    'maven': ['maven-local', 'maven-remote', 'maven-virtual', 'libs-release'],
     'nuget': ['nuget-local', 'nuget-remote', 'nuget-virtual'],
     'terraform': ['terraform-local', 'terraform-remote', 'terraform-virtual'],
     'docker': ['docker-local', 'docker-remote', 'docker-virtual']
