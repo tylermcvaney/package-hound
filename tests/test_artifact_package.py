@@ -28,28 +28,36 @@ class TestArtifactPackage(unittest.TestCase):
         self.assertEqual(package.package_name, "org.apache.commons:commons-lang3")
         self.assertIsNone(package.version)  # No specific version for metadata files
         self.assertEqual(package.filename, "maven-metadata.xml")
-        
-        # TODO
-        # These tests are commented out because the current implementation of ArtifactPackage does not handle these cases.
 
-        # # Test case for maven-metadata.xml in a versioned directory
-        # path = "maven-repo/org/apache/commons/commons-lang3/3.12.0/maven-metadata.xml"
-        # package = ArtifactPackage(path, "maven")
+        # Test case for maven-metadata.xml at artifact level
+        path = "maven-local/org/springframework/boot/spring-boot-starter-parent/maven-metadata.xml"
+        package = ArtifactPackage(path, "maven")
         
-        # self.assertEqual(package.repo, "maven-repo")
-        # self.assertEqual(package.package_name, "org.apache.commons:commons-lang3")
-        # self.assertEqual(package.version, "3.12.0")  # Version should be extracted from path
-        # self.assertEqual(package.filename, "maven-metadata.xml")
+        self.assertEqual(package.repo, "maven-local")
+        self.assertEqual(package.package_name, "org.springframework.boot:spring-boot-starter-parent")
+        self.assertIsNone(package.version)  # No specific version for metadata files
+        self.assertEqual(package.filename, "maven-metadata.xml")
+
+        # Test case for maven-metadata.xml at artifact level
+        path = "maven-local/com/google/guava/guava/maven-metadata.xml"
+        package = ArtifactPackage(path, "maven")
         
-        # # Test case for maven-metadata.xml at group level
-        # path = "maven-repo/org/apache/maven-metadata.xml"
-        # package = ArtifactPackage(path, "maven")
-        
-        # self.assertEqual(package.repo, "maven-repo")
-        # self.assertEqual(package.package_name, "org.apache")  # Just group ID for group-level metadata
-        # self.assertIsNone(package.version)
-        # self.assertEqual(package.filename, "maven-metadata.xml")
+        self.assertEqual(package.repo, "maven-local")
+        self.assertEqual(package.package_name, "com.google.guava:guava")
+        self.assertIsNone(package.version)  # No specific version for metadata files
+        self.assertEqual(package.filename, "maven-metadata.xml")
     
+    def test_npm_package_parsing_with_package_json(self):
+            """Test parsing NPM package paths ending with package.json"""
+            # Path ending with package.json
+            path = "npm-local/.npm/react-dev-utils/package.json"
+            package = ArtifactPackage(path, "npm")
+
+            self.assertEqual(package.repo, "npm-local")
+            self.assertEqual(package.package_name, "react-dev-utils")
+            self.assertIsNone(package.version)  # No version in this path
+            self.assertEqual(package.filename, "package.json")
+
     def test_npm_package_parsing(self):
         """Test parsing NPM package paths"""        
         # Regular package
