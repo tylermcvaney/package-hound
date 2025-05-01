@@ -22,7 +22,7 @@ logger = logging.getLogger('artifactory_checker')
 DEFAULT_REPO_MAPPINGS = {
     'python': ['pypi-local', 'pypi-remote', 'pypi-virtual'],
     'npm': ['npm-local', 'npm-remote', 'npm-virtual'],
-    'maven': ['maven-local', 'maven-remote', 'maven-virtual', 'libs-release'],
+    'maven': ['maven-local', 'maven-remote', 'maven-virtual'],
     'nuget': ['nuget-local', 'nuget-remote', 'nuget-virtual'],
     'terraform': ['terraform-local', 'terraform-remote', 'terraform-virtual'],
     'docker': ['docker-local', 'docker-remote', 'docker-virtual']
@@ -123,11 +123,11 @@ class ArtifactPackage:
                 # We need to identify where the version starts
                 base_name = self.filename[:-6]  # Remove '.nupkg'
                 
-                # Find the last occurence of a version pattern like X.Y.Z
-                match = re.search(r'(.+)\.(\d+\.\d+\.\d+(?:\.\d+)?)$', base_name)
+                # Find the last occurence of a version pattern including pre-release versions
+                match = re.search(r'(.+)\.(\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][a-zA-Z0-9.-]+)?)$', base_name)
                 if match:
                     package_name = match.group(1)
-                    # version = match.group(2)  # We could capture this but don't need it here
+                    # version = match.group(2)  # We could capture this but don't need it in this method
                     return package_name
             return None
         
@@ -491,7 +491,6 @@ class ArtifactoryPackageChecker:
                     logger.debug(f"Error checking {check_url}: {str(e)}")
                     continue
             else:
-                # Rest of your existing URL construction logic
                 if artifact_package.package_type == 'maven':
                     # Maven packages
                     if ':' in artifact_package.package_name:

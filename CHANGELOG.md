@@ -1,4 +1,15 @@
 # Changelog
+## v1.0.1 - 2025-04-30
+### Added
+- Added new test cases for metadata file handling scenarios
+  - More comprehensive test coverage for Maven metadata files at various levels
+  - Added test cases for NPM package paths ending with package.json
+
+### Fixed
+- Updated `_extract_package_name` to handle Maven metadata files more robustly
+- Ensured proper extraction of artifact_id and group_id even for edge cases
+- Improved metadata file handling for Maven and NPM packages
+
 ## v1.0.0
 ### Added
 - Initial release of the Artifactory Package Checker
