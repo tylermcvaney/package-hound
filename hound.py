@@ -22,7 +22,7 @@ logger = logging.getLogger('artifactory_checker')
 DEFAULT_REPO_MAPPINGS = {
     'python': ['pypi-local', 'pypi-remote', 'pypi-virtual'],
     'npm': ['npm-local', 'npm-remote', 'npm-virtual'],
-    'maven': ['maven-local', 'maven-remote', 'maven-virtual', 'libs-release'],
+    'maven': ['maven-local', 'maven-remote', 'maven-virtual'],
     'nuget': ['nuget-local', 'nuget-remote', 'nuget-virtual'],
     'terraform': ['terraform-local', 'terraform-remote', 'terraform-virtual'],
     'docker': ['docker-local', 'docker-remote', 'docker-virtual']
@@ -60,11 +60,13 @@ class ArtifactPackage:
             # Special case for maven-metadata.xml
             if self.filename == 'maven-metadata.xml':
                 # For metadata files, the artifact ID is the directory containing the file
-                artifact_id = parts[-2]
-                # Group ID is everything between repo and artifact ID
-                group_parts = parts[1:-2]
-                group_id = '.'.join(group_parts)
-                return f"{group_id}:{artifact_id}"
+                if len(parts) >= 3:  # Need at least repo/group/artifact
+                    artifact_id = parts[-2]  # Directory containing metadata file
+                    # Group ID is everything between repo and artifact ID
+                    group_parts = parts[1:-2] if len(parts) > 3 else [parts[1]]
+                    group_id = '.'.join(group_parts)
+                    return f"{group_id}:{artifact_id}"
+                return None
                 
             if len(parts) >= 4:  # Need at least repo/group/artifact/version
                 # Find the version directory - it's the one before the filename
@@ -87,6 +89,8 @@ class ArtifactPackage:
             if len(parts) >= 3:
                 if parts[1].startswith('@'):  # Scoped package
                     return f"{parts[1]}/{parts[2]}"
+                elif parts[-1] == 'package.json':  # Handle paths ending in package.json
+                    return parts[-2]  # Use the directory name before package.json
                 else:
                     return parts[1]
             return None
@@ -119,11 +123,11 @@ class ArtifactPackage:
                 # We need to identify where the version starts
                 base_name = self.filename[:-6]  # Remove '.nupkg'
                 
-                # Find the last occurence of a version pattern like X.Y.Z
-                match = re.search(r'(.+)\.(\d+\.\d+\.\d+(?:\.\d+)?)$', base_name)
+                # Find the last occurence of a version pattern including pre-release versions
+                match = re.search(r'(.+)\.(\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][a-zA-Z0-9.-]+)?)$', base_name)
                 if match:
                     package_name = match.group(1)
-                    # version = match.group(2)  # We could capture this but don't need it here
+                    # version = match.group(2)  # We could capture this but don't need it in this method
                     return package_name
             return None
         
@@ -178,7 +182,7 @@ class ArtifactPackage:
         """Extract version from path based on type"""
         # Special cases for metadata files which don't represent a specific version
         if self.package_type == 'maven' and self.filename == 'maven-metadata.xml':
-            return None
+            return None  # Metadata files don't have a specific version
         elif self.package_type == 'python' and (self.filename.endswith('.html') or self.filename == 'index.html'):
             return None
         elif self.package_type == 'npm' and self.filename == 'package.json':
@@ -418,19 +422,7 @@ class ArtifactoryPackageChecker:
             (artifact_package.package_type == 'npm' and artifact_package.filename == 'package.json') or
             (artifact_package.package_type == 'nuget' and artifact_package.filename == 'index.json')
         )
-
-        if is_metadata_file:
-            # Use special handling for metadata files...
-            return {
-                'path': artifact_package.path,
-                'package_name': artifact_package.package_name,
-                'package_type': artifact_package.package_type,
-                'version': artifact_package.version,
-                'found': False,
-                'repository': None,
-                'error': 'Unable to extract package name or version from path'
-            }
-            
+        
         # Build direct URL to check if package exists
         check_url = None
         
@@ -449,12 +441,56 @@ class ArtifactoryPackageChecker:
                 repos_to_check.append(repo)
         
         for repo in repos_to_check:
+            # Special case for Maven metadata files
+            if is_metadata_file and artifact_package.package_type == 'maven':
+                if ':' in artifact_package.package_name:
+                    group_id, artifact_id = artifact_package.package_name.split(':', 1)
+                    group_path = group_id.replace('.', '/')
+                    
+                    # Direct metadata URL construction
+                    check_url = f"{self.base_url}/{repo}/{group_path}/{artifact_id}/maven-metadata.xml"
+                    
+                    try:
+                        logger.debug(f"Checking metadata URL: {check_url}")
+                        response = self.session.head(check_url, timeout=10)
+                        
+                        if response.status_code == 200:
+                            return {
+                                'path': artifact_package.path,
+                                'package_name': artifact_package.package_name,
+                                'package_type': artifact_package.package_type,
+                                'version': None,  # Metadata files don't have specific versions
+                                'found': True,
+                                'repository': repo,
+                                'error': None
+                            }
+                    except Exception as e:
+                        logger.debug(f"Error checking metadata {check_url}: {str(e)}")
+                        continue
+            
             # First, try direct path check
-            if artifact_package.path.startswith(f"{repo}/"):
+            elif artifact_package.path.startswith(f"{repo}/"):
                 # Use the exact path provided
                 check_url = f"{self.base_url}/{artifact_package.path}"
+                
+                try:
+                    logger.debug(f"Checking URL: {check_url}")
+                    response = self.session.head(check_url, timeout=10)
+                    
+                    if response.status_code == 200:
+                        return {
+                            'path': artifact_package.path,
+                            'package_name': artifact_package.package_name,
+                            'package_type': artifact_package.package_type,
+                            'version': artifact_package.version,
+                            'found': True,
+                            'repository': repo,
+                            'error': None
+                        }
+                except Exception as e:
+                    logger.debug(f"Error checking {check_url}: {str(e)}")
+                    continue
             else:
-                # Build path based on package type
                 if artifact_package.package_type == 'maven':
                     # Maven packages
                     if ':' in artifact_package.package_name:
@@ -522,7 +558,7 @@ class ArtifactoryPackageChecker:
             'path': artifact_package.path,
             'package_name': artifact_package.package_name,
             'package_type': artifact_package.package_type,
-            'version': artifact_package.version,
+            'version': artifact_package.version if not is_metadata_file else None,
             'found': False,
             'repository': None,
             'error': f"Package not found in repositories: {', '.join(repos_to_check)}"
